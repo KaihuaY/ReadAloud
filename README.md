@@ -353,6 +353,8 @@ live site.
 
 ## Known limits
 
+- A speech model asked about a silent recording can invent a perfect read (we saw this in testing). Read Aloud guards against it locally: a take the microphone barely heard is scored as "no reading" without ever being sent, and a take where the model claims far more reading than the microphone heard is marked unsure. Check the transcript in the grown-up screen when a score looks too good.
+
 - **Listening is approximate.** A 5-6-year-old sounding out a word is a
   genuinely hard case for any speech model, and the ear will sometimes get
   it wrong. Check the transcript on the Grown-ups screen if a score looks

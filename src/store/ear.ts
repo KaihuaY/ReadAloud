@@ -30,6 +30,16 @@ export function isSilentTake(take: Pick<ReadingTake, 'activeSec'>): boolean {
   return take.activeSec !== undefined && take.activeSec < SILENT_ACTIVE_SEC
 }
 
+/**
+ * True when the ear reports far more seconds of reading than the microphone
+ * heard activity for - the signature of a model inventing a read over a
+ * mostly quiet take. Generous margin so a soft-spoken reader is never flagged.
+ */
+export function claimsMoreThanHeard(ear: Pick<EarResult, 'readSeconds'>, take: Pick<ReadingTake, 'activeSec'>): boolean {
+  if (take.activeSec === undefined) return false
+  return ear.readSeconds > take.activeSec * 2 + 2
+}
+
 /** The ear result for a take we never sent: every word skipped, nothing heard. */
 export function silentEarResult(words: string[], at: number): EarResult {
   return {
@@ -195,6 +205,7 @@ export async function requestEar(takeId: string, blob: Blob, deps: EarDeps = {})
       setEarStage(takeId, 'failed')
       return
     }
+    if (claimsMoreThanHeard(ear, take)) ear.unsure = true
 
     setTakeEar(takeId, ear)
 

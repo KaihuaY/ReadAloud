@@ -139,6 +139,16 @@ describe('requestEar - gates that send nothing', () => {
     expect(saved.score?.stars).toBe(0)
   })
 
+  it('marks a take unsure when the ear claims far more reading than the mic heard', async () => {
+    const take = addTake({ activeSec: 1, durationSec: 8 })
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, result: okReadResult({ readSeconds: 5 }) }))
+    await requestEar(take.id, makeBlob(), { fetch: fetchMock as unknown as typeof fetch })
+    const saved = getDoc().reading.takes.find((t) => t.id === take.id)!
+    expect(saved.ear?.unsure).toBe(true)
+    expect(saved.score?.outcome).toBe('unsure')
+    expect(saved.score?.stars).toBe(1)
+  })
+
   it('still sends a take that has no activeSec (older takes) or heard enough', async () => {
     const take = addTake({ activeSec: 3 })
     const fetchMock = vi.fn(async () => jsonResponse({ ok: true, result: okReadResult() }))
