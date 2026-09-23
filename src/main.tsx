@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import { setToken, start as startGistSync } from './store/gistSync'
 import { startUploadWorker } from './store/driveUpload'
+import { retryPendingEars } from './store/ear'
 import { recoverUnfinishedTakes } from './audio/recordingSession'
 
 // One-tap setup link: https://<app>/#/setup?token=<gist-only token>
@@ -32,6 +33,8 @@ applySetupLink()
 startGistSync()
 // Uploads finished reading takes to the parent's Google Drive when configured.
 startUploadWorker()
+// Retries any take whose ear pass never finished last session (crash, closed tab, offline).
+void retryPendingEars()
 // Turns any partial recording left over from a crash/reload mid-take (see
 // audio/recordingSession.ts) into a real, playable take before Home ever
 // renders.

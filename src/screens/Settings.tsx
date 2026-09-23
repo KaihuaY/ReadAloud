@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   useProgress,
   update,
@@ -9,10 +9,18 @@ import {
   resetAll,
 } from '../store/progress'
 import { adjustTokens } from '../store/reading'
+import {
+  isDriveConfigured,
+  retryFailedUploads,
+  testDriveConnection,
+  useUploadSummary,
+  type DriveConfig,
+} from '../store/driveUpload'
+import { coachStatus, type CoachStatusResult } from '../store/readingCoach'
 import { clearToken, getToken, setToken, start as startSync, stop as stopSync, useSyncStatus } from '../store/gistSync'
 import { PinGate } from '../components/PinGate'
 import { navigate } from '../router'
-import { formatBytes } from '../store/recordings'
+import { formatBytes, getRecordingStore } from '../store/recordings'
 import { APP_BUILD } from '../buildInfo'
 import type { Tier } from '../store/rewards'
 
@@ -22,9 +30,12 @@ export { PinGate } from '../components/PinGate'
 const READING_LEVELS = [1, 2, 3, 4, 5, 6, 7, 8] as const
 const READS_PER_DAY_OPTIONS = [1, 2, 3, 4, 5]
 const MAX_SECONDS_OPTIONS = [30, 45, 60, 90]
+const RECORDING_KEEP_OPTIONS = [7, 14, 30, 90]
 const TIERS: Tier[] = ['gold', 'silver', 'bronze']
 const BOX_TIER_EMOJI: Record<Tier, string> = { gold: '🟡', silver: '⚪', bronze: '🟤' }
 const BOX_TIER_LABEL: Record<Tier, string> = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' }
+const DEFAULT_FOLDER_NAME = 'Read Aloud takes'
+const EMPTY_DRIVE_CFG: DriveConfig = { scriptUrl: '', secret: '', folderName: DEFAULT_FOLDER_NAME }
 
 /** Downscales an uploaded image to a small square PNG data URL. Kept for Phase 2's "photo of a book page" flow. */
 export function downscaleImage(file: File): Promise<string> {
@@ -141,16 +152,67 @@ export function Settings() {
   const [backups, setBackups] = useState(() => listBackups())
   const [confirmingRestoreIndex, setConfirmingRestoreIndex] = useState<number | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+  const uploadSummary = useUploadSummary()
+  const [recordingStats, setRecordingStats] = useState<{ count: number; bytes: number } | null>(null)
+  // The Drive secret is masked by default; the grown-up (already past the PIN) can reveal it to
+  // copy it into the Apps Script's UPLOAD_SECRET property.
+  const [secretHidden, setSecretHidden] = useState(true)
+  const [testingDrive, setTestingDrive] = useState(false)
+  const [driveTestMessage, setDriveTestMessage] = useState<string | null>(null)
+  const [testingCoach, setTestingCoach] = useState(false)
+  const [coachStatusResult, setCoachStatusResult] = useState<CoachStatusResult | null>(null)
 
   function refreshBackups() {
     setBackups(listBackups())
   }
+
+  function refreshRecordingStats() {
+    const store = getRecordingStore()
+    Promise.all([store.list(), store.usageBytes()]).then(([items, bytes]) => {
+      setRecordingStats({ count: items.length, bytes })
+    })
+  }
+
+  useEffect(() => {
+    refreshRecordingStats()
+    // Runs once on mount - the recordings store lives outside React state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   if (!unlocked) {
     return <PinGate pin={progress.settings.pin} onUnlock={() => setUnlocked(true)} />
   }
 
   const settings = progress.settings
+  const driveCfg = settings.driveUpload ?? EMPTY_DRIVE_CFG
+
+  function setDriveField(patch: Partial<DriveConfig>) {
+    const next = { ...driveCfg, ...patch }
+    update('settings', (s) => ({
+      ...s,
+      driveUpload: next.scriptUrl.trim() === '' && next.secret.trim() === '' ? undefined : next,
+    }))
+  }
+
+  async function handleTestDrive() {
+    setTestingDrive(true)
+    setDriveTestMessage(null)
+    const result = await testDriveConnection({
+      scriptUrl: driveCfg.scriptUrl,
+      secret: driveCfg.secret,
+      folderName: driveCfg.folderName || DEFAULT_FOLDER_NAME,
+    })
+    setDriveTestMessage(result.message)
+    setTestingDrive(false)
+  }
+
+  async function handleTestCoach() {
+    setTestingCoach(true)
+    setCoachStatusResult(null)
+    const result = await coachStatus()
+    setCoachStatusResult(result)
+    setTestingCoach(false)
+  }
 
   function handleExport() {
     const blob = new Blob([exportJson()], { type: 'application/json' })
@@ -284,6 +346,189 @@ export function Settings() {
           />
           Offer "Listen first" before recording
         </label>
+      </section>
+
+      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Recordings</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>Keep local audio for</span>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {RECORDING_KEEP_OPTIONS.map((days) => (
+              <button
+                key={days}
+                type="button"
+                className="cc-btn"
+                onClick={() => update('settings', (s) => ({ ...s, recordingKeepDays: days }))}
+                style={{
+                  flex: 1,
+                  background: settings.recordingKeepDays === days ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                  color: settings.recordingKeepDays === days ? '#fff' : 'var(--cc-ink)',
+                  border: settings.recordingKeepDays === days ? 'none' : '2px solid var(--cc-border)',
+                  boxShadow: 'none',
+                }}
+              >
+                {days} days
+              </button>
+            ))}
+          </div>
+        </div>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          Recordings on this device: {recordingStats?.count ?? '…'} · {recordingStats ? formatBytes(recordingStats.bytes) : '…'}
+        </p>
+        <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+          ☁️ {uploadSummary.done} saved · {uploadSummary.pending} waiting · {uploadSummary.failed} failed
+        </p>
+        {uploadSummary.failed > 0 && (
+          <button type="button" className="cc-btn cc-btn-surface" style={{ alignSelf: 'flex-start' }} onClick={() => retryFailedUploads()}>
+            Retry failed uploads
+          </button>
+        )}
+      </section>
+
+      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Google Drive + AI</h2>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
+          Script URL
+          <input
+            value={driveCfg.scriptUrl}
+            onChange={(e) => setDriveField({ scriptUrl: e.target.value })}
+            placeholder="https://script.google.com/macros/s/.../exec"
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
+          Secret
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <input
+              type={secretHidden ? 'password' : 'text'}
+              data-testid="drive-secret"
+              value={driveCfg.secret}
+              onChange={(e) => setDriveField({ secret: e.target.value })}
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              style={{ flex: 1, minWidth: 0 }}
+            />
+            <button
+              type="button"
+              data-testid="drive-secret-toggle"
+              className="cc-btn cc-btn-surface"
+              style={{ minHeight: 56, minWidth: 56, padding: '0.5rem' }}
+              onClick={() => setSecretHidden((h) => !h)}
+              aria-label={secretHidden ? 'Show the secret' : 'Hide the secret'}
+            >
+              {secretHidden ? '👁️' : '🙈'}
+            </button>
+          </div>
+          <span style={{ fontWeight: 400, fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+            This must be the same word as the <code>UPLOAD_SECRET</code> property in your Apps Script.
+          </span>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
+          Folder name
+          <input
+            value={driveCfg.folderName}
+            onChange={(e) => setDriveField({ folderName: e.target.value })}
+            placeholder={DEFAULT_FOLDER_NAME}
+          />
+        </label>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button type="button" className="cc-btn cc-btn-surface" disabled={testingDrive} onClick={() => void handleTestDrive()}>
+            {testingDrive ? 'Testing…' : 'Test'}
+          </button>
+          <button
+            type="button"
+            className="cc-btn cc-btn-surface"
+            disabled={testingCoach || !isDriveConfigured(settings)}
+            onClick={() => void handleTestCoach()}
+          >
+            {testingCoach ? 'Testing…' : 'Test ear + coach'}
+          </button>
+        </div>
+        {driveTestMessage && <p style={{ margin: 0, fontSize: '0.85rem' }}>{driveTestMessage}</p>}
+        {coachStatusResult &&
+          (coachStatusResult.ok ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', fontSize: '0.85rem' }}>
+              <span>
+                👂 Gemini ({coachStatusResult.geminiModel ?? 'model unknown'}):{' '}
+                {coachStatusResult.hasGeminiKey
+                  ? coachStatusResult.geminiOk
+                    ? 'ready ✅'
+                    : `key found, but ${coachStatusResult.geminiError ?? 'it did not answer'}`
+                  : 'no key yet'}
+              </span>
+              <span>
+                ✍️ Claude:{' '}
+                {coachStatusResult.hasClaudeKey
+                  ? coachStatusResult.claudeOk
+                    ? 'ready ✅'
+                    : `key found, but ${coachStatusResult.claudeError ?? 'it did not answer'}`
+                  : 'no key yet'}
+              </span>
+              <span>
+                Ear used today: {coachStatusResult.readUsedToday ?? 0} / {coachStatusResult.readCap ?? 0}
+              </span>
+              <span>
+                Coach notes used today: {coachStatusResult.coachUsedToday ?? 0} / {coachStatusResult.coachCap ?? 0}
+              </span>
+              <span>
+                Book lookups used today: {coachStatusResult.lookupUsedToday ?? 0} / {coachStatusResult.lookupCap ?? 0}
+              </span>
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: '0.85rem' }}>{coachStatusResult.reason ?? 'Something went wrong.'}</p>
+          ))}
+
+        <div style={{ borderTop: '2px solid var(--cc-border)', paddingTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 700, minHeight: 44 }}>
+            <input
+              type="checkbox"
+              checked={settings.ear?.enabled !== false}
+              onChange={(e) => update('settings', (s) => ({ ...s, ear: { enabled: e.target.checked } }))}
+              style={{ width: 24, height: 24 }}
+            />
+            👂 Check her reading with the ear
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 700, minHeight: 44 }}>
+            <input
+              type="checkbox"
+              checked={settings.aiCoach?.enabled !== false}
+              onChange={(e) => update('settings', (s) => ({ ...s, aiCoach: { enabled: e.target.checked } }))}
+              style={{ width: 24, height: 24 }}
+            />
+            ✍️ Write coach notes
+          </label>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+            While the ear is on, each recording is sent to Google&apos;s Gemini API through your own script so it
+            can mark the words. Coach notes send only the word counts to Anthropic&apos;s Claude, never the audio.
+          </p>
+        </div>
+
+        <details>
+          <summary style={{ cursor: 'pointer', fontWeight: 700 }}>How to set this up</summary>
+          <ol style={{ margin: '0.5rem 0 0', paddingLeft: '1.25rem', fontSize: '0.9rem' }}>
+            <li>
+              Open <code>script.google.com</code> and click &quot;New project&quot;.
+            </li>
+            <li>
+              Delete the sample code and paste in the whole <code>scripts/read-aloud.gs</code> file from this repo.
+              Then Project Settings → Script properties → add <code>UPLOAD_SECRET</code> (any long word of your
+              own), <code>GEMINI_API_KEY</code> (from Google AI Studio), and <code>ANTHROPIC_API_KEY</code> (from
+              the Anthropic console).
+            </li>
+            <li>
+              Click Deploy → New deployment → type Web app. Set &quot;Execute as&quot; to Me and &quot;Who has
+              access&quot; to Anyone, then Deploy and authorize when asked. Copy the Web app URL (it ends in{' '}
+              <code>/exec</code>).
+            </li>
+            <li>Paste that URL and the same secret above, then press Test, then &quot;Test ear + coach&quot;.</li>
+            <li>
+              Later, after pasting a newer version of the script: run the function <code>authorizeOnce</code> once,
+              then Deploy → Manage deployments → your existing deployment → ✏️ → New version. Do not create a new
+              deployment, or the URL changes.
+            </li>
+          </ol>
+        </details>
       </section>
 
       <BoxTokensSection />

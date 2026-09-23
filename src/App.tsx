@@ -6,7 +6,10 @@ import { useSyncStatus, type SyncStatus } from './store/gistSync'
 import { RecordingBanner } from './components/RecordingBanner'
 import { UpdateBanner } from './components/UpdateBanner'
 import { Home } from './screens/Home'
+import { Library } from './screens/Library'
+import { Read } from './screens/Read'
 import { BlindBox } from './screens/BlindBox'
+import { ParentReview } from './screens/ParentReview'
 import { Settings } from './screens/Settings'
 import { Credits } from './screens/Credits'
 
@@ -71,11 +74,11 @@ function ComingSoon({ title }: { title: string }) {
 
 function Screen({ path }: { path: string }) {
   if (path === '/home') return <Home />
-  if (path === '/library') return <ComingSoon title="📖 Books" />
-  if (path.startsWith('/read/')) return <ComingSoon title="📖 Reading" />
+  if (path === '/library') return <Library />
+  if (path.startsWith('/read/')) return <Read />
   if (path === '/tricky') return <ComingSoon title="☀️ Tricky words" />
   if (path === '/box') return <BlindBox />
-  if (path === '/review') return <ComingSoon title="👀 Grown-ups" />
+  if (path === '/review') return <ParentReview />
   if (path === '/settings') return <Settings />
   if (path === '/credits') return <Credits />
   return <Home />

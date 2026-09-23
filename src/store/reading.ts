@@ -83,6 +83,20 @@ export function setTakeEar(takeId: string, ear: EarResult): void {
   }))
 }
 
+/**
+ * Sets a take's `earStatus` alone (see ear.ts's pipeline: 'pending' once a
+ * listen attempt starts, 'failed' if it never gets a result). Checked
+ * before update() so re-marking the same status is a no-op.
+ */
+export function setTakeEarStatus(takeId: string, status: ReadingTake['earStatus']): void {
+  const take = getDoc().reading.takes.find((t) => t.id === takeId)
+  if (!take || take.earStatus === status) return
+  update('reading', (reading) => ({
+    ...reading,
+    takes: reading.takes.map((t) => (t.id === takeId ? { ...t, earStatus: status } : t)),
+  }))
+}
+
 /** Writes the computed score onto a saved take. */
 export function setTakeScore(takeId: string, score: TakeScore): void {
   update('reading', (reading) => ({

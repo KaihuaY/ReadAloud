@@ -217,16 +217,120 @@ button {
   }
 }
 
-/* A tricky word: soft-yellow highlight, never red - see plan's kid-copy rules. */
+/* FocusWindow / PassageText word buttons: plain by default (every word is
+   tappable to hear it), never any color on their own - see plan's kid-copy
+   rules for why only tricky words (below) get a highlight. */
 .ra-word {
-  background: var(--ra-sun);
-  color: var(--ra-sun-ink);
+  display: inline-flex;
+  align-items: baseline;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
   border-radius: 0.4rem;
-  padding: 0.05rem 0.3rem;
+  padding: 0.05rem 0.25rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
+.ra-word:active {
+  background: var(--cc-border);
+}
+
+/* A tricky word: soft-yellow highlight, never red - see plan's kid-copy rules. */
 .ra-word-tricky {
+  background: var(--ra-sun);
+  color: var(--ra-sun-ink);
   font-weight: 800;
+}
+
+/* The word currently being spoken during "Listen first" (or, when no
+   boundary event arrives in time, every word in the sentence) - a soft
+   purple underline glow, never a background color swap that would clash
+   with the tricky-word highlight above. */
+.ra-word-live {
+  text-decoration: underline;
+  text-decoration-color: var(--cc-primary);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 4px;
+  text-shadow: 0 0 12px rgba(109, 40, 246, 0.35);
+}
+
+/* RecordButton: big round mic button, slow glow ring while recording. */
+.ra-record-btn {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  font-weight: 800;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  background: var(--cc-primary);
+  color: var(--cc-primary-ink);
+  box-shadow: var(--cc-shadow);
+  flex-shrink: 0;
+}
+
+.ra-record-btn:active {
+  transform: scale(0.97);
+}
+
+.ra-record-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ra-record-btn-recording {
+  background: var(--cc-accent);
+  color: #2b1900;
+  animation: ra-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes ra-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 138, 0, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 16px rgba(255, 138, 0, 0);
+  }
+}
+
+/* StarBurst: filled stars pop in one at a time (see animation-delay in the component). */
+.ra-star {
+  font-size: 2.6rem;
+  display: inline-block;
+}
+
+.ra-star-fill {
+  animation: ra-star-pop 300ms ease-out backwards;
+}
+
+@keyframes ra-star-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* LevelChips: a horizontally-scrollable row of level pills. */
+.ra-level-chips {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* A quick "oops, try again" wiggle - used on wrong taps/picks across the
