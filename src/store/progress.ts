@@ -210,6 +210,8 @@ export interface ReadingTake {
   passageId: string
   startedAt: number
   durationSec: number
+  /** Seconds the microphone heard something above its noise floor (see ActivityMeter). Silent takes never reach the ear. */
+  activeSec?: number
   listenedFirst?: boolean
   mimeType: string
   sizeBytes: number

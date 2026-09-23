@@ -364,8 +364,10 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
 
   resetTrackingState()
 
+  // Seconds the mic heard something above its noise floor - the ear uses it
+  // to skip takes that are pure silence (a speech model asked about silence
+  // can invent a perfect read).
   const activeSec = Math.round((meter?.activeMs ?? 0) / 1000)
-  void activeSec // not currently persisted on the take; kept for a future "heard" mode, mirroring KidEdu's piano goal counting
   const durationSec = Math.max(0, Math.round(result.durationMs / 1000))
   const day = localDay()
   const settings = getDoc().settings
@@ -376,6 +378,7 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     passageId: passageId ?? '',
     startedAt,
     durationSec,
+    activeSec,
     ...(listenedFirst ? { listenedFirst: true } : {}),
     mimeType: result.mimeType,
     sizeBytes: result.blob?.size ?? 0,
@@ -527,6 +530,7 @@ export async function recoverUnfinishedTakes(): Promise<number> {
       passageId,
       startedAt,
       durationSec: chunks, // ~1 chunk per second - see AssembledPartial's doc comment
+      ...(matchingCheckpoint ? { activeSec: Math.round(matchingCheckpoint.activeMs / 1000) } : {}),
       ...(matchingCheckpoint?.listenedFirst ? { listenedFirst: true } : {}),
       mimeType,
       sizeBytes: blob.size,

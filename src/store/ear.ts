@@ -8,7 +8,7 @@ import { useSyncExternalStore } from 'react'
 import { tokenizeWords } from '../content/textSplit'
 import { passageById } from '../content/passages'
 import { arrayBufferToBase64, isDriveConfigured, type DriveConfig } from './driveUpload'
-import { getDoc } from './progress'
+import { getDoc, type EarResult, type ReadingTake } from './progress'
 import { getRecordingStore } from './recordings'
 import { awardPassageBestIfBeaten, isWordTake, setTakeEar, setTakeEarStatus, setTakeScore, wordOfTake } from './reading'
 import { scoreTake, validateEar } from './readingScore'
@@ -16,6 +16,31 @@ import { requestReadingFeedback } from './readingCoach'
 import { setRecordsBeaten, updateRecords } from './records'
 import { awardNewBadges } from './badges'
 import { recordPractice } from './trickyWords'
+
+/** Below this many heard seconds a take is treated as silence and never sent to the ear. */
+export const SILENT_ACTIVE_SEC = 1
+
+/**
+ * True when the microphone heard (almost) nothing during the take. Only
+ * takes that carry `activeSec` can be judged; older takes without it are
+ * sent to the ear as usual. A speech model given pure silence can invent a
+ * perfect read, so silence is scored locally as "noReading" instead.
+ */
+export function isSilentTake(take: Pick<ReadingTake, 'activeSec'>): boolean {
+  return take.activeSec !== undefined && take.activeSec < SILENT_ACTIVE_SEC
+}
+
+/** The ear result for a take we never sent: every word skipped, nothing heard. */
+export function silentEarResult(words: string[], at: number): EarResult {
+  return {
+    words: words.map((w, i) => ({ i, w, s: 'skipped' as const })),
+    extraWords: [],
+    readSeconds: 0,
+    confidence: 0,
+    transcript: '',
+    at,
+  }
+}
 
 export type EarStage = 'idle' | 'encoding' | 'listening' | 'done' | 'failed'
 
@@ -127,10 +152,22 @@ export async function requestEar(takeId: string, blob: Blob, deps: EarDeps = {})
       return
     }
 
+    const words = wordTake ? [word as string] : tokenizeWords(passage!.text).map((t) => t.norm)
+
+    if (isSilentTake(take)) {
+      // Nothing to listen to: score it as "noReading" here, without a network
+      // call and without a coach note (the result screen's gentle
+      // "come a bit closer" copy covers it).
+      const ear = silentEarResult(words, (deps.now ?? Date.now)())
+      setTakeEar(takeId, ear)
+      setTakeScore(takeId, scoreTake(ear, words, take.durationSec, undefined))
+      setTakeEarStatus(takeId, 'done')
+      setEarStage(takeId, 'done')
+      return
+    }
+
     setTakeEarStatus(takeId, 'pending')
     setEarStage(takeId, 'encoding')
-
-    const words = wordTake ? [word as string] : tokenizeWords(passage!.text).map((t) => t.norm)
     const dataBase64 = arrayBufferToBase64(await blob.arrayBuffer())
     const mimeType = blob.type || take.mimeType
 

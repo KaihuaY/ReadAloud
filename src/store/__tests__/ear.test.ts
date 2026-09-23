@@ -126,6 +126,26 @@ describe('requestEar - happy path', () => {
 })
 
 describe('requestEar - gates that send nothing', () => {
+  it('scores a silent take as noReading locally without calling the ear', async () => {
+    const take = addTake({ activeSec: 0, durationSec: 8 })
+    const fetchMock = vi.fn()
+    await requestEar(take.id, makeBlob(), { fetch: fetchMock as unknown as typeof fetch })
+    expect(fetchMock).not.toHaveBeenCalled()
+    const saved = getDoc().reading.takes.find((t) => t.id === take.id)!
+    expect(saved.earStatus).toBe('done')
+    expect(saved.ear?.confidence).toBe(0)
+    expect(saved.ear?.words.every((w) => w.s === 'skipped')).toBe(true)
+    expect(saved.score?.outcome).toBe('noReading')
+    expect(saved.score?.stars).toBe(0)
+  })
+
+  it('still sends a take that has no activeSec (older takes) or heard enough', async () => {
+    const take = addTake({ activeSec: 3 })
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, result: okReadResult() }))
+    await requestEar(take.id, makeBlob(), { fetch: fetchMock as unknown as typeof fetch })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('sends nothing and marks failed when ear.enabled is false', async () => {
     addTake()
     update('settings', (s) => ({ ...s, ear: { enabled: false } }))
