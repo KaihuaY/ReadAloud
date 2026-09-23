@@ -197,6 +197,92 @@ describe('requestEar - retry behavior', () => {
   })
 })
 
+describe('requestEar - records and badges wiring (passage takes)', () => {
+  it('updates records and awards badges once a passage take is scored', async () => {
+    addTake()
+    const fetchFn = vi.fn(async () => jsonResponse({ ok: true, result: okReadResult() }))
+
+    await requestEar('take-1', makeBlob(), { fetch: fetchFn as unknown as typeof fetch, sleep: instantSleep })
+
+    // first-read is earned as soon as there's one real (non-word) take.
+    expect((getDoc().rewards.badges ?? []).map((b) => b.id)).toContain('first-read')
+    expect(getDoc().reading.records?.mostReadsInDay).toMatchObject({ value: 1 })
+  })
+})
+
+describe('requestEar - word-practice takes ("Try just this word")', () => {
+  const WORD_PASSAGE_ID = 'word:cat'
+
+  function addWordTake(overrides: Partial<ReadingTake> = {}): ReadingTake {
+    return addTake({ id: 'take-1', passageId: WORD_PASSAGE_ID, durationSec: 4, ...overrides })
+  }
+
+  it('posts words: [word] instead of resolving a passage', async () => {
+    addWordTake()
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        result: { confidence: 0.95, readSeconds: 1, transcript: 'cat', words: [{ i: 0, w: 'cat', s: 'read' }], extraWords: [] },
+      }),
+    )
+
+    await requestEar('take-1', makeBlob(), { fetch: fetchFn as unknown as typeof fetch, sleep: instantSleep })
+
+    const [, init] = (fetchFn as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit]
+    const payload = JSON.parse(init.body as string)
+    expect(payload.words).toEqual(['cat'])
+    expect(payload.passageId).toBe(WORD_PASSAGE_ID)
+  })
+
+  it('scores the take, calls recordPractice, and skips passage-best/coach', async () => {
+    addWordTake()
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        result: { confidence: 0.95, readSeconds: 1, transcript: 'cat', words: [{ i: 0, w: 'cat', s: 'read' }], extraWords: [] },
+      }),
+    )
+
+    await requestEar('take-1', makeBlob(), { fetch: fetchFn as unknown as typeof fetch, sleep: instantSleep })
+
+    const take = getDoc().reading.takes[0]
+    expect(take.score).toBeDefined()
+    expect(take.score?.outcome).toBe('full')
+    expect(getDoc().reading.practice.cat).toMatchObject({ tries: 1, ok: 1 })
+    // No passage best is ever recorded for a word-practice "passage".
+    expect(getDoc().reading.passageBests[WORD_PASSAGE_ID]).toBeUndefined()
+  })
+
+  it('records a failed try (skipped/different) without crediting practice.ok', async () => {
+    addWordTake()
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        result: { confidence: 0.9, readSeconds: 1, transcript: '', words: [{ i: 0, w: 'cat', s: 'skipped' }], extraWords: [] },
+      }),
+    )
+
+    await requestEar('take-1', makeBlob(), { fetch: fetchFn as unknown as typeof fetch, sleep: instantSleep })
+
+    expect(getDoc().reading.practice.cat).toMatchObject({ tries: 1, ok: 0 })
+  })
+
+  it('never shows up in records or the reading-goal-relevant badge counts', async () => {
+    addWordTake()
+    const fetchFn = vi.fn(async () =>
+      jsonResponse({
+        ok: true,
+        result: { confidence: 0.95, readSeconds: 1, transcript: 'cat', words: [{ i: 0, w: 'cat', s: 'read' }], extraWords: [] },
+      }),
+    )
+
+    await requestEar('take-1', makeBlob(), { fetch: fetchFn as unknown as typeof fetch, sleep: instantSleep })
+
+    expect(getDoc().reading.records?.mostReadsInDay).toBeUndefined()
+    expect((getDoc().rewards.badges ?? []).map((b) => b.id)).not.toContain('first-read')
+  })
+})
+
 describe('retryPendingEars', () => {
   it('picks up every pending take with local audio and calls fetch once each', async () => {
     addTake({ id: 'take-1', earStatus: 'pending' })

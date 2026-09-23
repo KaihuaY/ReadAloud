@@ -3,11 +3,13 @@ import { Gate } from './components/Gate'
 import { isInArea, useRoute } from './router'
 import { useProgress } from './store/progress'
 import { useSyncStatus, type SyncStatus } from './store/gistSync'
+import { useBadgeAwards } from './store/badges'
 import { RecordingBanner } from './components/RecordingBanner'
 import { UpdateBanner } from './components/UpdateBanner'
 import { Home } from './screens/Home'
 import { Library } from './screens/Library'
 import { Read } from './screens/Read'
+import { Tricky } from './screens/Tricky'
 import { BlindBox } from './screens/BlindBox'
 import { ParentReview } from './screens/ParentReview'
 import { Settings } from './screens/Settings'
@@ -60,23 +62,11 @@ function lastAreaPath(area: 'read'): string | null {
   }
 }
 
-/** A simple placeholder for a screen this phase hasn't built yet, so the app still runs end to end. */
-function ComingSoon({ title }: { title: string }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1rem 1rem 2rem' }}>
-      <h1 style={{ margin: 0, fontSize: '1.4rem' }}>{title}</h1>
-      <div className="cc-card" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--cc-ink-soft)', fontWeight: 700 }}>
-        Coming soon
-      </div>
-    </div>
-  )
-}
-
 function Screen({ path }: { path: string }) {
   if (path === '/home') return <Home />
   if (path === '/library') return <Library />
   if (path.startsWith('/read/')) return <Read />
-  if (path === '/tricky') return <ComingSoon title="☀️ Tricky words" />
+  if (path === '/tricky') return <Tricky />
   if (path === '/box') return <BlindBox />
   if (path === '/review') return <ParentReview />
   if (path === '/settings') return <Settings />
@@ -88,6 +78,11 @@ function App() {
   const { path, navigate } = useRoute()
   const progress = useProgress()
   const syncStatus = useSyncStatus()
+  // Mounted once, globally, so a badge earned from any screen (not just
+  // Home/BlindBox, which also render the toast itself via <BadgeToast/>) is
+  // persisted and queued right away - the toast then shows next time the kid
+  // is on a screen that renders one.
+  useBadgeAwards()
   const mainRef = useRef<HTMLElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   // The bottom stack (banners + menu) is position: fixed so it stays on

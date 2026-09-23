@@ -1,7 +1,9 @@
 import { navigate } from '../router'
 import { useProgress } from '../store/progress'
 import { readsForDay, goalProgress } from '../store/readingRewards'
-import { localDay, lastNDays, dayOffset } from '../store/sessions'
+import { passageTakes } from '../store/reading'
+import { useTrickyWords } from '../store/trickyWords'
+import { localDay, lastNDays } from '../store/sessions'
 import { passageById } from '../content/passages'
 import { SayIt } from '../components/SayIt'
 import { RingTimer } from '../components/RingTimer'
@@ -23,23 +25,18 @@ export function Home() {
   const daysWithReads = new Set(weekDays.filter((day) => readsForDay(progress.reading.takes, day) > 0))
 
   // Today's take with the lowest stars below 3, if any - a gentle nudge to
-  // try that one again rather than a new passage.
-  const readAgainTake = progress.reading.takes
+  // try that one again rather than a new passage. Word-practice takes never
+  // count - see reading.ts's passageTakes().
+  const readAgainTake = passageTakes(progress.reading.takes)
     .filter((t) => t.day === today && t.score && t.score.stars < 3)
     .sort((a, b) => (a.score?.stars ?? 0) - (b.score?.stars ?? 0))[0]
   const readAgainPassage = readAgainTake
     ? passageById(readAgainTake.passageId, progress.settings.customPassages)
     : undefined
 
-  // Up to 3 tricky words practised in the last 14 days, for the sun-chip nudge.
-  const trickyCutoff = dayOffset(today, -13)
-  const recentTrickyWords = Array.from(
-    new Set(
-      progress.reading.takes
-        .filter((t) => t.day >= trickyCutoff && (t.score?.trickyWords.length ?? 0) > 0)
-        .flatMap((t) => t.score?.trickyWords ?? []),
-    ),
-  ).slice(0, 3)
+  // Active (non-retired) tricky words, for the sun-chip nudge - a word
+  // practised to 3 successes on the Tricky words screen disappears here too.
+  const trickyEntries = useTrickyWords(3)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
@@ -91,7 +88,7 @@ export function Home() {
         </button>
       )}
 
-      {recentTrickyWords.length > 0 && (
+      {trickyEntries.length > 0 && (
         <button
           type="button"
           className="cc-card"
@@ -110,9 +107,9 @@ export function Home() {
         >
           <strong style={{ fontSize: '1.1rem' }}>☀️ Tricky words</strong>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            {recentTrickyWords.map((w) => (
+            {trickyEntries.map((e) => (
               <span
-                key={w}
+                key={e.word}
                 style={{
                   background: 'var(--ra-sun)',
                   color: 'var(--ra-sun-ink)',
@@ -121,7 +118,7 @@ export function Home() {
                   fontWeight: 700,
                 }}
               >
-                {w}
+                {e.word}
               </span>
             ))}
           </div>

@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { navigate } from '../router'
 import { useProgress } from '../store/progress'
 import { useReading } from '../store/reading'
-import { LEVELS, SEED_BOOKS, passagesForLevel, type PassageLevel, type ReadingPassage } from '../content/passages'
+import { LEVELS, passagesForLevel, type PassageLevel, type ReadingPassage } from '../content/passages'
+import { myBooks } from '../store/customPassages'
 import { LevelChips } from '../components/LevelChips'
 import { PassageCard } from '../components/PassageCard'
 
@@ -59,17 +60,17 @@ export function Library() {
     return { bestStars: best ? starsForAccuracy(best.accuracy) : 0, readCount }
   }
 
-  const myBooks: ReadingPassage[] = [...SEED_BOOKS, ...progress.settings.customPassages]
+  const myBooksList: ReadingPassage[] = myBooks(progress.settings)
   const levelPassages = passagesForLevel(selected)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
       <h1 style={{ margin: 0, fontSize: '1.4rem' }}>📖 Books</h1>
 
-      {myBooks.length > 0 && (
+      {myBooksList.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           <strong style={{ fontSize: '1.15rem' }}>📚 My books</strong>
-          {myBooks.map((passage) => {
+          {myBooksList.map((passage) => {
             const { bestStars, readCount } = statsFor(passage)
             return (
               <PassageCard

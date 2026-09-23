@@ -20,6 +20,26 @@ import { getRecordingStore } from './recordings'
 
 const DEVICE_ID_KEY = 'readaloud.deviceId'
 
+/** Marks a "Try just this word" mini-practice take (see Tricky words) - never a real passage read. */
+const WORD_TAKE_PREFIX = 'word:'
+
+/** Whether a take is a single-word practice take (passageId 'word:<normalized word>') rather than a real passage read. */
+export function isWordTake(take: Pick<ReadingTake, 'passageId'>): boolean {
+  return take.passageId.startsWith(WORD_TAKE_PREFIX)
+}
+
+/** The practised word for a word-take passageId, or null for a normal passage id (or an empty word). */
+export function wordOfTake(passageId: string): string | null {
+  if (!passageId.startsWith(WORD_TAKE_PREFIX)) return null
+  const word = passageId.slice(WORD_TAKE_PREFIX.length)
+  return word === '' ? null : word
+}
+
+/** `takes` minus any word-practice takes - what every read count/record/badge should use. */
+export function passageTakes(takes: readonly ReadingTake[]): ReadingTake[] {
+  return takes.filter((t) => !isWordTake(t))
+}
+
 function hasLocalStorage(): boolean {
   try {
     return typeof localStorage !== 'undefined'

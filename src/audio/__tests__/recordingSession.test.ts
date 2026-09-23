@@ -121,6 +121,60 @@ describe('recordingSession', () => {
     expect(getDoc().reading.takes.length).toBe(beforeCount + 1)
   }, 8000)
 
+  it('auto-stops on an explicit opts.maxSeconds, overriding settings.maxRecordSeconds', async () => {
+    // settings.maxRecordSeconds stays at its (much longer) default - only the
+    // explicit override should govern the auto-stop timer.
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    const beforeCount = getDoc().reading.takes.length
+
+    await startTake('word:cat', { maxSeconds: 3 })
+    expect(getSessionState().status).toBe('recording')
+
+    await wait(3400) // past the 3s explicit auto-stop, well under the settings default
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') {
+      expect(state.discarded).toBe(false)
+      expect(state.take.passageId).toBe('word:cat')
+    }
+    expect(getDoc().reading.takes.length).toBe(beforeCount + 1)
+  }, 8000)
+
+  it('a word-practice take is kept at 1s instead of the normal 3s floor, and never awards the daily goal', async () => {
+    setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
+    const beforeCount = getDoc().reading.takes.length
+
+    await startTake('word:cat', { maxSeconds: 8 })
+    await wait(1200) // past the 1s word-take floor, well under the normal 3s floor
+
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') {
+      expect(state.discarded).toBe(false)
+      expect(state.goalJustReached).toBe(false)
+    }
+    expect(getDoc().reading.takes.length).toBe(beforeCount + 1)
+    expect(getDoc().reading.days).toEqual({})
+  }, 8000)
+
+  it('discards a word-practice take shorter than the 1s floor', async () => {
+    setAudioBackend(new FakeAudioBackend(SILENT_SCRIPT, { tickMs: 100 }))
+    await startTake('word:cat', { maxSeconds: 8 })
+
+    // Stop almost immediately - SILENT_SCRIPT reports no real duration yet.
+    await wait(50)
+    const beforeCount = getDoc().reading.takes.length
+    await stopTake('user')
+
+    const state = getSessionState()
+    expect(state.status).toBe('done')
+    if (state.status === 'done') expect(state.discarded).toBe(true)
+    expect(getDoc().reading.takes.length).toBe(beforeCount)
+  }, 8000)
+
   it('records listenedFirst on the saved take when requested', async () => {
     setAudioBackend(new FakeAudioBackend(LOUD_SCRIPT, { tickMs: 100 }))
     await startTake('l1-cat-nap', { listenedFirst: true })

@@ -119,6 +119,18 @@ describe('computeRecords', () => {
     expect(beatenRecords(before, after)).toEqual(['mostReadsInDay'])
     expect(beatenRecords(undefined, after)).toEqual([])
   })
+
+  it('ignores word-practice takes entirely - they never count toward any record', () => {
+    const wordTake = withSmooth('2026-09-20', 999, 'word:cat')
+    const reading = {
+      takes: [take('2026-09-19'), take('2026-09-19'), wordTake],
+      streak,
+    }
+    const r = computeRecords(reading)
+    expect(r.mostReadsInDay).toMatchObject({ value: 2, day: '2026-09-19' })
+    expect(r.smoothestRead).toBeUndefined()
+    expect(r.passagesWithThreeStars).toBeUndefined()
+  })
 })
 
 describe('updateRecords', () => {

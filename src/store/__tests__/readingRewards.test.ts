@@ -54,6 +54,11 @@ describe('readsForDay', () => {
     const takes = [take({ id: 'a', day: '2026-09-06' }), take({ id: 'b', day: '2026-09-07' })]
     expect(readsForDay(takes, '2026-09-07')).toBe(1)
   })
+
+  it('never counts a word-practice take ("Try just this word")', () => {
+    const takes = [take({ id: 'a', passageId: 'word:cat' }), take({ id: 'b', passageId: 'l1-cat-nap' })]
+    expect(readsForDay(takes, '2026-09-07')).toBe(1)
+  })
 })
 
 describe('goalReached / goalProgress', () => {

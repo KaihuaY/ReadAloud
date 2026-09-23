@@ -1,6 +1,6 @@
 // The reward collection: a themed set of real photo cards (gems & minerals,
-// animals, space) with a rarity and a true fact to learn, for Nora and
-// Amelia. Photos live in public/collection/<id>.jpg, fetched by
+// animals, space) with a rarity and a true fact to learn, for the
+// kid. Photos live in public/collection/<id>.jpg, fetched by
 // scripts/fetch-collection.mjs from scripts/collection-sources.json; credits
 // for each photo are generated into src/content/collectionCredits.ts. The
 // box/album UI is built on top of this file by another builder - COLLECTION,

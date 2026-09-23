@@ -8,15 +8,26 @@ import type { Tier } from './rewards'
 import type { ReadingDay, ReadingTake } from './progress'
 import { dayOffset, localDay } from './sessions'
 
+// A word-practice take's passageId always looks like 'word:<word>' (see
+// store/reading.ts's isWordTake/wordOfTake, the canonical definition) - it's
+// practice, never a read, so it must never count toward the goal or any
+// record. Duplicated here as a tiny prefix check (rather than importing
+// reading.ts) so this module stays free of the progress store, as its
+// header comment promises.
+function isWordPracticeTake(take: Pick<ReadingTake, 'passageId'>): boolean {
+  return take.passageId.startsWith('word:')
+}
+
 /**
  * How many of `takes` on local day `day` count toward the daily goal: every
  * take that day whose score says something real happened - a `noReading`
- * outcome never counts, but a take that hasn't been scored yet (the ear is
- * still pending, or scoring is disabled) counts optimistically so the ring
- * doesn't sit empty while she waits.
+ * outcome never counts, nor does a word-practice take ("Try just this
+ * word"), but a take that hasn't been scored yet (the ear is still pending,
+ * or scoring is disabled) counts optimistically so the ring doesn't sit
+ * empty while she waits.
  */
 export function readsForDay(takes: readonly ReadingTake[], day: string): number {
-  return takes.filter((t) => t.day === day && t.score?.outcome !== 'noReading').length
+  return takes.filter((t) => t.day === day && t.score?.outcome !== 'noReading' && !isWordPracticeTake(t)).length
 }
 
 /** Whether `count` reads meets or exceeds the daily goal. */

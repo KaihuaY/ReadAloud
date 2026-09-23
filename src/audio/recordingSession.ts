@@ -10,13 +10,14 @@ import { FakeAudioBackend, FAKE_PIANO_SCRIPT } from './fakeBackend'
 import { computeWaveform } from './waveform'
 import { MicStartError, type AudioBackend, type MicError, type MicSession, type RecordingResult } from './types'
 import { acquireWakeLock, type WakeLockHandle } from './wakeLock'
-import { getDeviceId, awardReadIfGoalReached, saveTake, setTakeWaveform } from '../store/reading'
+import { getDeviceId, awardReadIfGoalReached, isWordTake, saveTake, setTakeWaveform } from '../store/reading'
 import { getDoc, type ReadingTake } from '../store/progress'
 import { getRecordingStore, requestPersistentStorage } from '../store/recordings'
 import { isDriveConfigured, processUploadQueue } from '../store/driveUpload'
 import { requestEar } from '../store/ear'
 import { localDay } from '../store/sessions'
 import { fireConfetti } from '../components/Confetti'
+import { awardNewBadges } from '../store/badges'
 
 export type SessionState =
   | { status: 'idle' }
@@ -43,6 +44,8 @@ export type SessionState =
 
 const FAKE_MIC_FLAG_KEY = 'readaloud.fakeMic'
 const MIN_KEPT_DURATION_SEC = 3
+/** Word-practice takes ("Try just this word") are much shorter by nature - a 1s floor instead of 3s. */
+const MIN_KEPT_DURATION_SEC_WORD = 1
 const CHECKPOINT_INTERVAL_MS = 1000
 const INFLIGHT_KEY = 'readaloud.reading.inflight'
 
@@ -236,9 +239,10 @@ async function persistPartialChunk(
 /**
  * Must be invoked directly from a tap handler (Safari requires the mic
  * prompt inside a user gesture). The recording always auto-stops after
- * `settings.maxRecordSeconds`.
+ * `settings.maxRecordSeconds`, unless `opts.maxSeconds` is given (Tricky
+ * words' "Try just this word" passes 8, overriding the settings value).
  */
-export async function startTake(passageId: string, opts?: { listenedFirst?: boolean }): Promise<void> {
+export async function startTake(passageId: string, opts?: { listenedFirst?: boolean; maxSeconds?: number }): Promise<void> {
   if (isRecordingActive(state)) return
 
   // Best-effort and fire-and-forget: browsers that condition the grant on a
@@ -273,7 +277,7 @@ export async function startTake(passageId: string, opts?: { listenedFirst?: bool
       hearing: false,
     })
 
-    const maxSeconds = getDoc().settings.maxRecordSeconds
+    const maxSeconds = opts?.maxSeconds ?? getDoc().settings.maxRecordSeconds
     autoStopTimer = setTimeout(() => void stopTake('user'), maxSeconds * 1000)
 
     if (session.onChunk) {
@@ -380,7 +384,9 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
     upload: isDriveConfigured(settings) ? { status: 'pending', attempts: 0, updatedAt: Date.now() } : undefined,
   }
 
-  const discarded = durationSec < MIN_KEPT_DURATION_SEC
+  const wordTake = isWordTake({ passageId: passageId ?? '' })
+  const minKeptDurationSec = wordTake ? MIN_KEPT_DURATION_SEC_WORD : MIN_KEPT_DURATION_SEC
+  const discarded = durationSec < minKeptDurationSec
   let goalJustReached = false
 
   if (!discarded) {
@@ -392,8 +398,13 @@ export async function stopTake(reason: 'user' | 'hidden' = 'user'): Promise<void
       }
     }
     saveTake(take)
-    goalJustReached = awardReadIfGoalReached(day)
-    if (goalJustReached) fireConfetti('big')
+    // Word-practice takes ("Try just this word") are practice, not a read -
+    // they never count toward the daily goal or its streak.
+    if (!wordTake) {
+      goalJustReached = awardReadIfGoalReached(day)
+      if (goalJustReached) fireConfetti('big')
+      awardNewBadges()
+    }
     // Kick the Drive upload right away; the worker also retries later.
     if (take.upload) void processUploadQueue()
 

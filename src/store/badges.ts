@@ -8,6 +8,7 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { earnedBadges } from '../content/badges'
 import { getDoc, update, useProgress, type EarnedBadge, type ProgressDoc } from './progress'
+import { passageTakes } from './reading'
 
 /**
  * Diffs earnedBadges(getDoc()) against rewards.badges, appends any ids not
@@ -82,12 +83,13 @@ function pushBadgeToasts(ids: string[]): void {
  * on unrelated re-renders.
  */
 function badgeSignature(doc: ProgressDoc): string {
-  const threeStarReads = doc.reading.takes.filter((t) => t.score?.stars === 3).length
+  const realTakes = passageTakes(doc.reading.takes)
+  const threeStarReads = realTakes.filter((t) => t.score?.stars === 3).length
   const retiredWords = Object.values(doc.reading.practice).filter((p) => p.ok >= 3).length
 
   return [
     doc.reading.streak.best,
-    doc.reading.takes.length,
+    realTakes.length,
     threeStarReads,
     retiredWords,
     doc.collection.items.length,

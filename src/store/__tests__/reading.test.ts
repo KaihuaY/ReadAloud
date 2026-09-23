@@ -3,13 +3,16 @@ import {
   adjustTokens,
   awardPassageBestIfBeaten,
   awardReadIfGoalReached,
+  isWordTake,
   markAudioPruned,
+  passageTakes,
   saveTake,
   setParentStars,
   setTakeAi,
   setTakeEar,
   setTakeScore,
   setTakeWaveform,
+  wordOfTake,
 } from '../reading'
 import { getDoc, resetAll, type ReadingTake, type TakeScore } from '../progress'
 
@@ -232,5 +235,29 @@ describe('adjustTokens', () => {
     const before = getDoc().profile.updatedAt
     expect(adjustTokens('gold', -1)).toBe(0)
     expect(getDoc().profile.updatedAt).toBe(before)
+  })
+})
+
+describe('isWordTake / wordOfTake', () => {
+  it('recognizes a word-practice passageId and extracts the word', () => {
+    expect(isWordTake({ passageId: 'word:cat' })).toBe(true)
+    expect(wordOfTake('word:cat')).toBe('cat')
+  })
+
+  it('is false/null for a normal passage id', () => {
+    expect(isWordTake({ passageId: 'l1-cat-nap' })).toBe(false)
+    expect(wordOfTake('l1-cat-nap')).toBeNull()
+  })
+
+  it('treats an empty word as no word at all', () => {
+    expect(wordOfTake('word:')).toBeNull()
+  })
+})
+
+describe('passageTakes', () => {
+  it('filters out word-practice takes, keeping real passage reads', () => {
+    const passageTake = take('2026-09-07', { id: 'p1', passageId: 'l1-cat-nap' })
+    const wordTake = take('2026-09-07', { id: 'w1', passageId: 'word:cat' })
+    expect(passageTakes([passageTake, wordTake])).toEqual([passageTake])
   })
 })

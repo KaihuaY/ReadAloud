@@ -3,17 +3,19 @@
 // (so past days count from day one), plus one store action that caches the
 // result in `reading.records` and reports which records a fresh take just beat.
 
+import { useSyncExternalStore } from 'react'
 import { getDoc, update, useProgress, type ReadingTake, type RecordEntry, type Records, type Streak } from './progress'
 import { readsForDay } from './readingRewards'
+import { passageTakes } from './reading'
 import { localDay } from './sessions'
 
 export type RecordKey = keyof Records
 
 export const RECORD_KEYS: RecordKey[] = ['mostReadsInDay', 'longestStreakDays', 'smoothestRead', 'passagesWithThreeStars']
 
-/** Computes every record from scratch. */
+/** Computes every record from scratch. Word-practice takes ("Try just this word") never count - see reading.ts's passageTakes(). */
 export function computeRecords(reading: { takes: ReadingTake[]; streak: Streak }, now: number = Date.now()): Records {
-  const takes = reading.takes
+  const takes = passageTakes(reading.takes)
   const out: Records = {}
 
   const days = [...new Set(takes.map((t) => t.day))].sort()
@@ -92,6 +94,50 @@ export function useRecords(): Records | undefined {
   if (doc.reading.records) return doc.reading.records
   if (doc.reading.takes.length === 0) return undefined
   return computeRecords(doc.reading)
+}
+
+// ---------------------------------------------------------------------------
+// "Which records did this take just beat" - a tiny module-level store (same
+// pattern as ear.ts's earStage map) so the Read/Tricky screens can look up a
+// finished take's celebration without records.ts needing to know about
+// SessionState. Set by ear.ts right after updateRecords().
+// ---------------------------------------------------------------------------
+
+const beatenByTake = new Map<string, RecordKey[]>()
+const beatenListeners = new Set<() => void>()
+const NO_RECORDS_BEATEN: RecordKey[] = []
+
+function notifyBeaten(): void {
+  for (const l of beatenListeners) l()
+}
+
+function subscribeBeaten(cb: () => void): () => void {
+  beatenListeners.add(cb)
+  return () => beatenListeners.delete(cb)
+}
+
+/** Records `takeId` just beat (or clears it back to none). Called by ear.ts after updateRecords(). */
+export function setRecordsBeaten(takeId: string, keys: RecordKey[]): void {
+  if (keys.length === 0) {
+    if (!beatenByTake.has(takeId)) return
+    beatenByTake.delete(takeId)
+  } else {
+    beatenByTake.set(takeId, keys)
+  }
+  notifyBeaten()
+}
+
+export function getRecordsBeaten(takeId: string): RecordKey[] {
+  return beatenByTake.get(takeId) ?? NO_RECORDS_BEATEN
+}
+
+/** React hook: which records (if any) a given take just beat. */
+export function useRecordsBeaten(takeId: string): RecordKey[] {
+  return useSyncExternalStore(
+    subscribeBeaten,
+    () => getRecordsBeaten(takeId),
+    () => getRecordsBeaten(takeId),
+  )
 }
 
 /** Kid-facing labels for each record. */

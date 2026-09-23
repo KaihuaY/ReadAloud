@@ -66,6 +66,30 @@ describe('awardNewBadges', () => {
   })
 })
 
+describe('awardNewBadges - word-practice takes', () => {
+  it('a word-practice take alone never earns first-read', () => {
+    update('reading', (reading) => ({
+      ...reading,
+      takes: [
+        {
+          id: 'w1',
+          day: '2026-09-07',
+          passageId: 'word:cat',
+          startedAt: 0,
+          durationSec: 5,
+          mimeType: 'audio/webm',
+          sizeBytes: 1,
+          hasAudio: true,
+          deviceId: 'd',
+        },
+      ],
+    }))
+
+    expect(awardNewBadges()).toEqual([])
+    expect(getDoc().rewards.badges ?? []).toEqual([])
+  })
+})
+
 describe('dismissBadgeToast', () => {
   it('is a safe no-op for an id that is not queued', () => {
     expect(() => dismissBadgeToast('not-queued')).not.toThrow()

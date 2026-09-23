@@ -10,9 +10,12 @@ import { passageById } from '../content/passages'
 import { arrayBufferToBase64, isDriveConfigured, type DriveConfig } from './driveUpload'
 import { getDoc } from './progress'
 import { getRecordingStore } from './recordings'
-import { awardPassageBestIfBeaten, setTakeEar, setTakeEarStatus, setTakeScore } from './reading'
+import { awardPassageBestIfBeaten, isWordTake, setTakeEar, setTakeEarStatus, setTakeScore, wordOfTake } from './reading'
 import { scoreTake, validateEar } from './readingScore'
 import { requestReadingFeedback } from './readingCoach'
+import { setRecordsBeaten, updateRecords } from './records'
+import { awardNewBadges } from './badges'
+import { recordPractice } from './trickyWords'
 
 export type EarStage = 'idle' | 'encoding' | 'listening' | 'done' | 'failed'
 
@@ -114,9 +117,11 @@ export async function requestEar(takeId: string, blob: Blob, deps: EarDeps = {})
     if (!take) return
 
     const settings = doc.settings
-    const passage = passageById(take.passageId, settings.customPassages)
+    const wordTake = isWordTake(take)
+    const word = wordTake ? wordOfTake(take.passageId) : null
+    const passage = wordTake ? undefined : passageById(take.passageId, settings.customPassages)
 
-    if (!passage || settings.ear?.enabled === false || !isDriveConfigured(settings)) {
+    if ((wordTake ? !word : !passage) || settings.ear?.enabled === false || !isDriveConfigured(settings)) {
       setTakeEarStatus(takeId, 'failed')
       setEarStage(takeId, 'failed')
       return
@@ -125,7 +130,7 @@ export async function requestEar(takeId: string, blob: Blob, deps: EarDeps = {})
     setTakeEarStatus(takeId, 'pending')
     setEarStage(takeId, 'encoding')
 
-    const words = tokenizeWords(passage.text).map((t) => t.norm)
+    const words = wordTake ? [word as string] : tokenizeWords(passage!.text).map((t) => t.norm)
     const dataBase64 = arrayBufferToBase64(await blob.arrayBuffer())
     const mimeType = blob.type || take.mimeType
 
@@ -155,13 +160,29 @@ export async function requestEar(takeId: string, blob: Blob, deps: EarDeps = {})
     }
 
     setTakeEar(takeId, ear)
-    const prevBest = getDoc().reading.passageBests[take.passageId]
-    const score = scoreTake(ear, words, take.durationSec, prevBest)
-    setTakeScore(takeId, score)
-    awardPassageBestIfBeaten(takeId)
 
-    // The coach writes its notes from the score alone; it never blocks the ear.
-    void requestReadingFeedback(takeId)
+    if (wordTake) {
+      const score = scoreTake(ear, words, take.durationSec, undefined)
+      setTakeScore(takeId, score)
+      // Word takes are practice, not reads: no passage best, no coach note -
+      // just the tricky-word tally (ok when the word was read or stumbled).
+      recordPractice(word as string, score.outcome === 'full' && score.read + score.stumbled >= 1)
+    } else {
+      const prevBest = getDoc().reading.passageBests[take.passageId]
+      const score = scoreTake(ear, words, take.durationSec, prevBest)
+      setTakeScore(takeId, score)
+      awardPassageBestIfBeaten(takeId)
+
+      // The coach writes its notes from the score alone; it never blocks the ear.
+      void requestReadingFeedback(takeId)
+    }
+
+    // Records and badges only ever consider real passage takes (see
+    // reading.ts's passageTakes()) - safe to call for a word take too, since
+    // it will simply find nothing new to report.
+    const beaten = updateRecords()
+    setRecordsBeaten(takeId, beaten)
+    awardNewBadges()
 
     setEarStage(takeId, 'done')
   } catch {

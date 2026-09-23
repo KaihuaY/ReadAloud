@@ -6,6 +6,7 @@
 import { passagesForLevel, type PassageLevel } from './passages'
 import { findItem, itemsInSet, type CollectionSet } from './collection'
 import type { ProgressDoc } from '../store/progress'
+import { passageTakes } from '../store/reading'
 
 export interface Badge {
   id: string
@@ -48,10 +49,10 @@ function setComplete(doc: ProgressDoc, set: CollectionSet): boolean {
   return cards.length > 0 && cards.every((c) => ownedIds.has(c.id))
 }
 
-/** Passage ids that ever got a 3-star take. */
+/** Passage ids that ever got a 3-star take (word-practice takes never count). */
 function threeStarPassageIds(doc: ProgressDoc): Set<string> {
   const ids = new Set<string>()
-  for (const t of doc.reading.takes) if (t.score?.stars === 3) ids.add(t.passageId)
+  for (const t of passageTakes(doc.reading.takes)) if (t.score?.stars === 3) ids.add(t.passageId)
   return ids
 }
 
@@ -71,7 +72,7 @@ function levelDone(doc: ProgressDoc, level: PassageLevel): boolean {
 export function earnedBadges(doc: ProgressDoc): string[] {
   const out: string[] = []
 
-  const realTakes = doc.reading.takes
+  const realTakes = passageTakes(doc.reading.takes)
   if (realTakes.length >= 1) out.push('first-read')
   if (realTakes.length >= 10) out.push('ten-reads')
   if (realTakes.length >= 50) out.push('fifty-reads')

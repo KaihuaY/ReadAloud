@@ -23,6 +23,10 @@ import { navigate } from '../router'
 import { formatBytes, getRecordingStore } from '../store/recordings'
 import { APP_BUILD } from '../buildInfo'
 import type { Tier } from '../store/rewards'
+import { LEVELS, type PassageLevel, type ReadingPassage } from '../content/passages'
+import { myBooks, removeCustomPassage } from '../store/customPassages'
+import { DEFAULT_FIND_TITLE, findBook, ocrPage } from '../store/passageLookup'
+import { PassageForm, type PassageFormInitial, type PassageFormSource } from '../components/PassageForm'
 
 // Re-exported so BlindBox.tsx's `import { PinGate } from './Settings'` keeps working.
 export { PinGate } from '../components/PinGate'
@@ -37,8 +41,18 @@ const BOX_TIER_LABEL: Record<Tier, string> = { gold: 'Gold', silver: 'Silver', b
 const DEFAULT_FOLDER_NAME = 'Read Aloud takes'
 const EMPTY_DRIVE_CFG: DriveConfig = { scriptUrl: '', secret: '', folderName: DEFAULT_FOLDER_NAME }
 
-/** Downscales an uploaded image to a small square PNG data URL. Kept for Phase 2's "photo of a book page" flow. */
-export function downscaleImage(file: File): Promise<string> {
+/**
+ * Downscales an uploaded image so its longest side is at most `maxPx`,
+ * returned as a data URL. Used for the "My passages" photo-of-a-page flow
+ * (1600px JPEG, for the OCR script) with defaults that match the original
+ * 256px PNG use.
+ */
+export function downscaleImage(
+  file: File,
+  maxPx = 256,
+  mimeType: 'image/jpeg' | 'image/png' = 'image/png',
+  quality = 0.9,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(new Error('Could not read that file'))
@@ -46,21 +60,52 @@ export function downscaleImage(file: File): Promise<string> {
       const img = new Image()
       img.onerror = () => reject(new Error('Could not read that image'))
       img.onload = () => {
-        const maxSize = 256
-        const scale = Math.min(1, maxSize / Math.max(img.width, img.height))
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height))
         const canvas = document.createElement('canvas')
         canvas.width = Math.max(1, Math.round(img.width * scale))
         canvas.height = Math.max(1, Math.round(img.height * scale))
         const ctx = canvas.getContext('2d')
         if (!ctx) return reject(new Error('Canvas not supported'))
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-        resolve(canvas.toDataURL('image/png'))
+        resolve(canvas.toDataURL(mimeType, quality))
       }
       img.src = reader.result as string
     }
     reader.readAsDataURL(file)
   })
 }
+
+/** Plain-words message for a passageLookup failure reason - shown next to the photo/find buttons. */
+function lookupErrorMessage(reason: string): string {
+  if (reason === 'not-configured') return "The page reader isn't set up yet - add the script URL and secret above"
+  if (reason === 'cap') return 'Daily limit reached'
+  return `Couldn't read the page: ${reason}`
+}
+
+/** The visible source label for a saved "My books" passage (the seed book gets its own label at the call site). */
+function passageSourceLabel(passage: ReadingPassage): string {
+  switch (passage.source) {
+    case 'typed':
+      return 'Typed by a grown-up'
+    case 'photo':
+      return 'From a photo of a page'
+    case 'book-excerpt':
+      return 'Excerpt found online'
+    case 'book-original':
+      return passage.sourceNote ?? "Made up from the story - not the book's words"
+    default:
+      return ''
+  }
+}
+
+/** Which inline "My passages" flow (if any) is open - only one at a time. */
+type MyPassagesForm =
+  | { kind: 'typed' }
+  | { kind: 'photo'; prefill: { title: string; text: string }; warnings: string[] }
+  | { kind: 'find' }
+  | { kind: 'find-excerpt'; prefill: { title: string; text: string } }
+  | { kind: 'find-original'; prefill: { title: string; text: string; sourceNote: string } }
+  | { kind: 'edit'; id: string; source: PassageFormSource; prefill: PassageFormInitial }
 
 const BOX_MINUS_CONFIRM_MS = 4000
 
@@ -161,6 +206,14 @@ export function Settings() {
   const [driveTestMessage, setDriveTestMessage] = useState<string | null>(null)
   const [testingCoach, setTestingCoach] = useState(false)
   const [coachStatusResult, setCoachStatusResult] = useState<CoachStatusResult | null>(null)
+  const [passagesForm, setPassagesForm] = useState<MyPassagesForm | null>(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [photoMessage, setPhotoMessage] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+  const [findTitle, setFindTitle] = useState<string | null>(null)
+  const [findLevel, setFindLevel] = useState<PassageLevel>(progress.settings.readingLevel)
+  const [findBusy, setFindBusy] = useState(false)
+  const [findMessage, setFindMessage] = useState<string | null>(null)
 
   function refreshBackups() {
     setBackups(listBackups())
@@ -239,6 +292,58 @@ export function Settings() {
     restoreBackup(index)
     setConfirmingRestoreIndex(null)
     refreshBackups()
+  }
+
+  async function handlePhotoFile(file: File) {
+    setPhotoMessage(null)
+    setPhotoBusy(true)
+    try {
+      const dataUrl = await downscaleImage(file, 1600, 'image/jpeg', 0.85)
+      const commaIndex = dataUrl.indexOf(',')
+      const base64 = commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl
+      const result = await ocrPage(base64, 'image/jpeg')
+      if (result.ok) {
+        setPassagesForm({
+          kind: 'photo',
+          prefill: { title: result.result.title, text: result.result.text },
+          warnings: result.result.warnings,
+        })
+      } else {
+        setPhotoMessage(lookupErrorMessage(result.reason))
+      }
+    } catch (err) {
+      setPhotoMessage(err instanceof Error ? err.message : "Couldn't read that photo.")
+    } finally {
+      setPhotoBusy(false)
+    }
+  }
+
+  async function handleFindBook() {
+    const title = (findTitle ?? DEFAULT_FIND_TITLE).trim()
+    if (title === '') return
+    setFindMessage(null)
+    setFindBusy(true)
+    try {
+      const result = await findBook(title, findLevel)
+      if (!result.ok) {
+        setFindMessage(lookupErrorMessage(result.reason))
+        return
+      }
+      if (result.result.kind === 'none') {
+        setFindMessage("I couldn't find that book. You can type a passage or take a photo of a page instead.")
+        return
+      }
+      if (result.result.kind === 'excerpt') {
+        setPassagesForm({ kind: 'find-excerpt', prefill: { title: result.result.title, text: result.result.text } })
+      } else {
+        setPassagesForm({
+          kind: 'find-original',
+          prefill: { title: result.result.title, text: result.result.text, sourceNote: result.result.note },
+        })
+      }
+    } finally {
+      setFindBusy(false)
+    }
   }
 
   return (
@@ -346,6 +451,242 @@ export function Settings() {
           />
           Offer "Listen first" before recording
         </label>
+      </section>
+
+      <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1.05rem' }}>📚 My passages</h2>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {myBooks(settings).map((passage) => {
+            const isSeed = passage.id.startsWith('book-princess')
+            const editing = passagesForm?.kind === 'edit' && passagesForm.id === passage.id
+            return (
+              <div key={passage.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <span style={{ fontSize: '1.6rem', flexShrink: 0 }} aria-hidden="true">
+                    {passage.emoji}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ display: 'block' }}>{passage.title}</strong>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+                      Level {passage.level} · {passage.wordCount} words ·{' '}
+                      {isSeed ? 'built-in example' : passageSourceLabel(passage)}
+                    </span>
+                  </div>
+                  {!isSeed && (
+                    <>
+                      <button
+                        type="button"
+                        className="cc-btn cc-btn-surface"
+                        style={{ minHeight: 44, minWidth: 44, padding: '0.4rem' }}
+                        aria-label={`Edit ${passage.title}`}
+                        onClick={() => {
+                          setPhotoMessage(null)
+                          setFindMessage(null)
+                          setPassagesForm({
+                            kind: 'edit',
+                            id: passage.id,
+                            source: (passage.source as PassageFormSource | undefined) ?? 'typed',
+                            prefill: {
+                              id: passage.id,
+                              title: passage.title,
+                              text: passage.text,
+                              level: passage.level,
+                              emoji: passage.emoji,
+                              sourceNote: passage.sourceNote,
+                            },
+                          })
+                        }}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        type="button"
+                        className="cc-btn cc-btn-surface"
+                        style={{ minHeight: 44, minWidth: 44, padding: '0.4rem', color: 'var(--cc-danger)' }}
+                        aria-label={`Delete ${passage.title}`}
+                        onClick={() => {
+                          if (window.confirm(`Delete "${passage.title}"?`)) removeCustomPassage(passage.id)
+                        }}
+                      >
+                        🗑
+                      </button>
+                    </>
+                  )}
+                </div>
+                {editing && passagesForm && passagesForm.kind === 'edit' && (
+                  <PassageForm
+                    initial={passagesForm.prefill}
+                    source={passagesForm.source}
+                    onSave={() => setPassagesForm(null)}
+                    onCancel={() => setPassagesForm(null)}
+                  />
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="cc-btn cc-btn-surface"
+            style={{ minHeight: 56 }}
+            onClick={() => {
+              setPhotoMessage(null)
+              setFindMessage(null)
+              setPassagesForm(passagesForm?.kind === 'typed' ? null : { kind: 'typed' })
+            }}
+          >
+            ✍️ Type a passage
+          </button>
+          <button
+            type="button"
+            className="cc-btn cc-btn-surface"
+            style={{ minHeight: 56 }}
+            disabled={!isDriveConfigured(settings)}
+            onClick={() => {
+              setPassagesForm(null)
+              setFindMessage(null)
+              photoInputRef.current?.click()
+            }}
+          >
+            📷 Photo of a page
+          </button>
+          <button
+            type="button"
+            className="cc-btn cc-btn-surface"
+            style={{ minHeight: 56 }}
+            onClick={() => {
+              setPhotoMessage(null)
+              const isFindFlow =
+                passagesForm?.kind === 'find' || passagesForm?.kind === 'find-excerpt' || passagesForm?.kind === 'find-original'
+              setPassagesForm(isFindFlow ? null : { kind: 'find' })
+            }}
+          >
+            🔎 Find a book by title
+          </button>
+        </div>
+        {!isDriveConfigured(settings) && (
+          <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+            Set up Google Drive + AI below to use the photo reader.
+          </p>
+        )}
+
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) void handlePhotoFile(file)
+            if (photoInputRef.current) photoInputRef.current.value = ''
+          }}
+        />
+
+        {photoBusy && <p style={{ margin: 0 }}>Reading the page...</p>}
+        {photoMessage && <p style={{ margin: 0, color: 'var(--cc-danger)' }}>{photoMessage}</p>}
+
+        {passagesForm?.kind === 'typed' && (
+          <PassageForm source="typed" onSave={() => setPassagesForm(null)} onCancel={() => setPassagesForm(null)} />
+        )}
+
+        {passagesForm?.kind === 'photo' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {passagesForm.warnings.length > 0 && (
+              <div
+                style={{
+                  background: '#fff3d6',
+                  border: '1px solid #f0c36d',
+                  borderRadius: '0.75rem',
+                  padding: '0.6rem',
+                  fontSize: '0.85rem',
+                }}
+              >
+                {passagesForm.warnings.join(' ')}
+              </div>
+            )}
+            <PassageForm
+              initial={{ title: passagesForm.prefill.title, text: passagesForm.prefill.text, level: settings.readingLevel }}
+              source="photo"
+              onSave={() => setPassagesForm(null)}
+              onCancel={() => setPassagesForm(null)}
+            />
+          </div>
+        )}
+
+        {passagesForm?.kind === 'find' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontWeight: 700 }}>
+              Book title
+              <input value={findTitle ?? DEFAULT_FIND_TITLE} onChange={(e) => setFindTitle(e.target.value)} />
+            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <span style={{ fontWeight: 700, color: 'var(--cc-ink-soft)' }}>Level</span>
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {LEVELS.map((l) => (
+                  <button
+                    key={l.level}
+                    type="button"
+                    className="cc-btn"
+                    onClick={() => setFindLevel(l.level)}
+                    style={{
+                      flex: '1 1 40px',
+                      minWidth: 40,
+                      background: findLevel === l.level ? 'var(--cc-primary)' : 'var(--cc-surface)',
+                      color: findLevel === l.level ? '#fff' : 'var(--cc-ink)',
+                      border: findLevel === l.level ? 'none' : '2px solid var(--cc-border)',
+                      boxShadow: 'none',
+                    }}
+                  >
+                    {l.level}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button type="button" className="cc-btn cc-btn-primary" disabled={findBusy} onClick={() => void handleFindBook()}>
+              {findBusy ? 'Looking it up...' : 'Find'}
+            </button>
+            {findBusy && (
+              <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>This can take up to a minute.</p>
+            )}
+            {findMessage && <p style={{ margin: 0 }}>{findMessage}</p>}
+          </div>
+        )}
+
+        {passagesForm?.kind === 'find-excerpt' && (
+          <PassageForm
+            initial={{ title: passagesForm.prefill.title, text: passagesForm.prefill.text, level: findLevel }}
+            source="book-excerpt"
+            onSave={() => setPassagesForm(null)}
+            onCancel={() => setPassagesForm(null)}
+          />
+        )}
+
+        {passagesForm?.kind === 'find-original' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--cc-ink-soft)' }}>
+              This is a short made-up passage about the story, not the book&apos;s own words. Edit it as you like.
+            </p>
+            <PassageForm
+              initial={{
+                title: passagesForm.prefill.title,
+                text: passagesForm.prefill.text,
+                level: findLevel,
+                sourceNote: passagesForm.prefill.sourceNote,
+              }}
+              source="book-original"
+              onSave={() => setPassagesForm(null)}
+              onCancel={() => setPassagesForm(null)}
+            />
+          </div>
+        )}
+
+        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--cc-ink-soft)' }}>
+          Passages you add here show up under My books and sync to your other devices.
+        </p>
       </section>
 
       <section className="cc-card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

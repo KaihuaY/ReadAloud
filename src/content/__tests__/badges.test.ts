@@ -59,6 +59,13 @@ describe('earnedBadges - reads', () => {
     doc.reading.takes = Array.from({ length: 50 }, (_, i) => take({ id: `t${i}` }))
     expect(earnedBadges(doc)).toContain('fifty-reads')
   })
+
+  it('word-practice takes ("Try just this word") never count toward first-read/ten-reads', () => {
+    const doc: ProgressDoc = defaultDoc()
+    doc.reading.takes = Array.from({ length: 10 }, (_, i) => take({ id: `w${i}`, passageId: 'word:cat' }))
+    expect(earnedBadges(doc)).not.toContain('first-read')
+    expect(earnedBadges(doc)).not.toContain('ten-reads')
+  })
 })
 
 describe('earnedBadges - streaks', () => {
@@ -81,6 +88,12 @@ describe('earnedBadges - stars', () => {
 
     doc.reading.takes = Array.from({ length: 5 }, (_, i) => threeStarTake(`t${i}`, `p${i}`))
     expect(earnedBadges(doc)).toContain('five-three-star-reads')
+  })
+
+  it('a 3-star word-practice take never counts toward first-three-stars', () => {
+    const doc: ProgressDoc = defaultDoc()
+    doc.reading.takes = [threeStarTake('w0', 'word:cat')]
+    expect(earnedBadges(doc)).not.toContain('first-three-stars')
   })
 })
 
