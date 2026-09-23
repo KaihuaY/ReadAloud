@@ -1,8 +1,6 @@
-// Generates public/icon-192.png and public/icon-512.png: a hub icon on a
-// dark blue rounded background - a 3x3 mini cube of colored squares in the
-// upper-left ~55%, and a 5-white/3-black-key piano strip in the
-// lower-right ~40%. Uses only Node's built-in `zlib` (for PNG DEFLATE
-// compression) - no image libraries.
+// Generates public/icon-192.png and public/icon-512.png: an open book with
+// a little sun above it on a dark blue rounded background. Uses only Node's
+// built-in `zlib` (for PNG DEFLATE compression) - no image libraries.
 //
 // PNG is hand-encoded: we build an RGBA raster in memory, then write the
 // PNG signature + IHDR + IDAT (zlib-deflated raw scanlines) + IEND chunks.
@@ -15,18 +13,10 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const outDir = join(__dirname, '..', 'public');
 
-// Practice sticker colors (see src/content/colors.ts) plus background.
 const BG = [0x0b, 0x12, 0x2e]; // dark blue
 const WHITE = [0xf5, 0xf5, 0xf5];
-const BLACK_KEY = [0x10, 0x12, 0x2b];
-const CUBE_COLORS = [
-  [0xf5, 0xd9, 0x1a], // U yellow
-  [0xff, 0x8a, 0x00], // R orange
-  [0x1f, 0xa9, 0x53], // F green
-  [0xf5, 0xf5, 0xf5], // D white
-  [0xe6, 0x2b, 0x2b], // L red
-  [0x1f, 0x5f, 0xd9], // B blue
-];
+const LINE = [0xc7, 0xca, 0xd9]; // page text lines
+const SUN = [0xff, 0xd6, 0x4a]; // the "tricky word" sun
 
 function crc32(buf) {
   const table = crc32.table || (crc32.table = (() => {
@@ -83,47 +73,44 @@ function pixelColor(x, y, size) {
 
   let color = BG;
 
-  // --- 3x3 mini cube, upper-left ~55% ---------------------------------
-  const cubePad = Math.round(size * 0.08);
-  const cubeSize = Math.round(size * 0.5);
-  const cubeCell = cubeSize / 3;
-  const cubeGap = Math.max(1, size * 0.016);
-  const cubeCellR = Math.max(1, size * 0.03);
-  if (x >= cubePad && x < cubePad + cubeSize && y >= cubePad && y < cubePad + cubeSize) {
-    const gx = x - cubePad;
-    const gy = y - cubePad;
-    const ci = Math.min(2, Math.floor(gx / cubeCell));
-    const ri = Math.min(2, Math.floor(gy / cubeCell));
-    const cellX = gx - ci * cubeCell;
-    const cellY = gy - ri * cubeCell;
-    if (inRoundedRect(cellX, cellY, cubeGap, cubeGap, cubeCell - 2 * cubeGap, cubeCell - 2 * cubeGap, cubeCellR)) {
-      color = CUBE_COLORS[(ri * 3 + ci) % CUBE_COLORS.length];
+  // --- open book: two pages meeting at a spine, lower ~60% ---------------
+  const pad = size * 0.1;
+  const bookTop = size * 0.4;
+  const bookH = size * 0.5;
+  const pageW = (size - 2 * pad) / 2;
+  const spineGap = Math.max(1, size * 0.02);
+  const pageR = Math.max(1, size * 0.05);
+  const leftPage = inRoundedRect(x, y, pad, bookTop, pageW - spineGap / 2, bookH, pageR);
+  const rightPage = inRoundedRect(x, y, pad + pageW + spineGap / 2, bookTop, pageW - spineGap / 2, bookH, pageR);
+  if (leftPage || rightPage) {
+    color = WHITE;
+    // Grey text lines on each page.
+    const lineH = Math.max(1, size * 0.035);
+    const lineGap = size * 0.075;
+    const inset = size * 0.06;
+    const pageX = leftPage ? pad : pad + pageW + spineGap / 2;
+    for (let n = 0; n < 4; n++) {
+      const ly = bookTop + inset + n * lineGap;
+      const lw = (pageW - spineGap / 2 - 2 * inset) * (n === 3 ? 0.6 : 1);
+      if (x >= pageX + inset && x < pageX + inset + lw && y >= ly && y < ly + lineH) color = LINE;
     }
   }
 
-  // --- piano keys, lower-right ~40%: 5 white keys, 3 black keys -------
-  const pianoW = Math.round(size * 0.44);
-  const pianoH = Math.round(size * 0.3);
-  const pianoX = size - cubePad - pianoW;
-  const pianoY = size - cubePad - pianoH;
-  const pianoR = Math.max(1, size * 0.025);
-  const whiteKeyCount = 5;
-  const whiteKeyGap = Math.max(1, size * 0.006);
-  const whiteKeyW = (pianoW - whiteKeyGap * (whiteKeyCount - 1)) / whiteKeyCount;
-  if (inRoundedRect(x, y, pianoX, pianoY, pianoW, pianoH, pianoR)) {
-    color = WHITE;
-  }
-  // Black keys sit above the boundaries between white keys 1-2, 2-3, 4-5
-  // (skipping 3-4), the way a real keyboard's C/D/E/F/G stretch looks.
-  const blackKeyW = whiteKeyW * 0.6;
-  const blackKeyH = pianoH * 0.6;
-  const blackKeyBoundaries = [1, 2, 4];
-  for (const n of blackKeyBoundaries) {
-    const boundaryX = pianoX + n * (whiteKeyW + whiteKeyGap) - whiteKeyGap / 2;
-    const keyX = boundaryX - blackKeyW / 2;
-    if (inRoundedRect(x, y, keyX, pianoY, blackKeyW, blackKeyH, pianoR * 0.6)) {
-      color = BLACK_KEY;
-    }
+  // --- sun, upper-right --------------------------------------------------
+  const sunR = size * 0.12;
+  const sunX = size * 0.7;
+  const sunY = size * 0.18;
+  const dx = x - sunX;
+  const dy = y - sunY;
+  if (dx * dx + dy * dy <= sunR * sunR) color = SUN;
+  // Eight short rays.
+  for (let k = 0; k < 8; k++) {
+    const a = (k * Math.PI) / 4;
+    const rx = sunX + Math.cos(a) * sunR * 1.45;
+    const ry = sunY + Math.sin(a) * sunR * 1.45;
+    const ex = x - rx;
+    const ey = y - ry;
+    if (ex * ex + ey * ey <= (sunR * 0.22) ** 2) color = SUN;
   }
 
   return color;
