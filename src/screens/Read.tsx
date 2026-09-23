@@ -4,6 +4,7 @@ import { useProgress } from '../store/progress'
 import type { ReadingTake } from '../store/progress'
 import { useReading } from '../store/reading'
 import { useEarStage } from '../store/ear'
+import { RECORD_LABELS, useRecordsBeaten } from '../store/records'
 import { dismiss, startTake, stopTake, useRecordingSession } from '../audio/recordingSession'
 import type { MicError } from '../audio/types'
 import { isSpeechSupported, speakText, speakWord, cancelSpeech } from '../audio/speech'
@@ -64,6 +65,7 @@ export function Read() {
     ? reading.takes.find((t) => t.id === sessionTake.id) ?? sessionTake
     : null
   const earStage = useEarStage(sessionTake?.id ?? '')
+  const recordsBeaten = useRecordsBeaten(sessionTake?.id ?? '')
 
   // Always cancel any in-flight speech when this screen goes away.
   useEffect(() => {
@@ -329,6 +331,11 @@ export function Read() {
             Reading goal done for today! 🥉 You earned a bronze token
           </p>
         )}
+        {recordsBeaten.map((key) => (
+          <p key={key} style={{ margin: 0, fontWeight: 800, color: 'var(--cc-primary)' }}>
+            🏆 New record: {RECORD_LABELS[key].title.toLowerCase()}!
+          </p>
+        ))}
         <CoachCard take={liveTake} />
         <div style={{ display: 'flex', gap: '0.75rem', width: '100%' }}>
           <button type="button" className="cc-btn cc-btn-surface" style={{ minHeight: 96, flex: 1 }} onClick={handleReadAgain}>
