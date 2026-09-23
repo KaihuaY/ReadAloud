@@ -91,7 +91,7 @@ export function PassageForm({ initial, source, onSave, onCancel }: PassageFormPr
         <input
           value={emoji}
           onChange={(e) => setEmoji(e.target.value.slice(0, 2))}
-          style={{ width: '4ch' }}
+          style={{ width: 72, textAlign: 'center', fontSize: '1.5rem' }}
           maxLength={2}
         />
       </label>

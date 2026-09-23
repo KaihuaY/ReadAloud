@@ -1,4 +1,5 @@
 import { navigate } from '../router'
+import { useRecoveredTakeNotice } from '../audio/recordingSession'
 import { useProgress } from '../store/progress'
 import { readsForDay, goalProgress } from '../store/readingRewards'
 import { passageTakes } from '../store/reading'
@@ -38,9 +39,16 @@ export function Home() {
   // practised to 3 successes on the Tricky words screen disappears here too.
   const trickyEntries = useTrickyWords(3)
 
+  const recoveredCount = useRecoveredTakeNotice()
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1rem 1rem 2rem' }}>
       <BadgeToast />
+      {recoveredCount > 0 && (
+        <div className="cc-card" style={{ padding: '0.85rem 1rem', fontWeight: 700, background: '#fff8e6' }}>
+          💾 We saved {recoveredCount === 1 ? 'a reading' : `${recoveredCount} readings`} that got cut off earlier. It still counts!
+        </div>
+      )}
       <NoteCard />
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0, fontSize: '1.4rem' }}>{greeting}</h1>
