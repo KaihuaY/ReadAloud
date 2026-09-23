@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#0b122e"/>
+  <!-- mini cube, upper-left -->
+  <g>
+    <rect x="2" y="2" width="4.8" height="4.8" rx="1" fill="#f5d91a"/>
+    <rect x="7.4" y="2" width="4.8" height="4.8" rx="1" fill="#ff8a00"/>
+    <rect x="12.8" y="2" width="4.8" height="4.8" rx="1" fill="#1fa953"/>
+    <rect x="2" y="7.4" width="4.8" height="4.8" rx="1" fill="#f5f5f5"/>
+    <rect x="7.4" y="7.4" width="4.8" height="4.8" rx="1" fill="#e62b2b"/>
+    <rect x="12.8" y="7.4" width="4.8" height="4.8" rx="1" fill="#1f5fd9"/>
+    <rect x="2" y="12.8" width="4.8" height="4.8" rx="1" fill="#f5d91a"/>
+    <rect x="7.4" y="12.8" width="4.8" height="4.8" rx="1" fill="#ff8a00"/>
+    <rect x="12.8" y="12.8" width="4.8" height="4.8" rx="1" fill="#1fa953"/>
+  </g>
+  <!-- piano keys, lower-right -->
+  <g>
+    <rect x="15" y="18" width="15" height="12" rx="2" fill="#f5f5f5"/>
+    <rect x="17.6" y="18" width="2.2" height="7" fill="#10122b"/>
+    <rect x="21.4" y="18" width="2.2" height="7" fill="#10122b"/>
+    <rect x="26.8" y="18" width="2.2" height="7" fill="#10122b"/>
+  </g>
+</svg>

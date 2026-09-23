@@ -1,0 +1,274 @@
+@import "tailwindcss";
+
+/*
+ * Read Aloud theme: playful, bright, high-contrast, big touch targets.
+ * Light-only (this is a kids' app meant to be cheerful in daylight), so we
+ * do not define a prefers-color-scheme: dark branch on purpose.
+ */
+:root {
+  /* Brand */
+  --cc-bg: #f4f6ff;
+  --cc-surface: #ffffff;
+  --cc-ink: #10122b;
+  --cc-ink-soft: #4b4e72;
+  --cc-primary: #6d28f6;
+  --cc-primary-ink: #ffffff;
+  --cc-accent: #ff8a00;
+  --cc-success: #1fa953;
+  --cc-danger: #e62b2b;
+  --cc-border: #e1e3f5;
+  --cc-shadow: 0 10px 24px -8px rgba(16, 18, 43, 0.18);
+
+  /* A tricky word gets a soft-yellow highlight, never red - see .ra-word*. */
+  --ra-sun: #fff3b0;
+  --ra-sun-ink: #7a5a00;
+
+  /* Layout */
+  --cc-radius: 1rem;
+  --cc-touch: 56px;
+  --cc-safe-top: env(safe-area-inset-top, 0px);
+  --cc-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --cc-safe-left: env(safe-area-inset-left, 0px);
+  --cc-safe-right: env(safe-area-inset-right, 0px);
+
+  --font-sans: 'Nunito', 'Baloo 2', ui-rounded, 'Segoe UI Rounded', 'Segoe UI',
+    system-ui, -apple-system, Roboto, Arial, sans-serif;
+
+  color-scheme: light;
+  font-family: var(--font-sans);
+  color: var(--cc-ink);
+  background: var(--cc-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html,
+body {
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  background: var(--cc-bg);
+  color: var(--cc-ink);
+  overscroll-behavior-y: none;
+}
+
+/* App shell: header/nav (and the recording banner between them) stay put;
+   only <main> scrolls. 100dvh (where supported) keeps the shell's real
+   height correct on mobile browsers whose chrome shows/hides on scroll -
+   without it, 100% height can be measured against a taller viewport than
+   what's actually visible, letting the nav slide out of view. */
+.cc-app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+@supports (height: 100dvh) {
+  .cc-app-shell {
+    height: 100dvh;
+  }
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Utility layer: big, friendly, tappable buttons everywhere by default. */
+@layer components {
+  .cc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: var(--cc-touch);
+    min-width: var(--cc-touch);
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--cc-radius);
+    font-weight: 800;
+    font-size: 1.05rem;
+    border: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+    box-shadow: var(--cc-shadow);
+  }
+
+  .cc-btn:active {
+    transform: scale(0.96);
+  }
+
+  .cc-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .cc-btn-primary {
+    background: var(--cc-primary);
+    color: var(--cc-primary-ink);
+  }
+
+  .cc-btn-accent {
+    background: var(--cc-accent);
+    color: #2b1900;
+  }
+
+  .cc-btn-surface {
+    background: var(--cc-surface);
+    color: var(--cc-ink);
+    border: 2px solid var(--cc-border);
+    box-shadow: none;
+  }
+
+  .cc-card {
+    background: var(--cc-surface);
+    border-radius: 1.5rem;
+    box-shadow: var(--cc-shadow);
+    border: 1px solid var(--cc-border);
+  }
+
+  .cc-safe-top {
+    padding-top: var(--cc-safe-top);
+  }
+
+  .cc-safe-bottom {
+    padding-bottom: var(--cc-safe-bottom);
+  }
+
+  .cc-safe-x {
+    padding-left: var(--cc-safe-left);
+    padding-right: var(--cc-safe-right);
+  }
+
+  /* A big, thumb-friendly seek bar for TakePlayer's custom audio player -
+     the native <input type="range"> look is too thin/fiddly for a kid. */
+  .cc-seek {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 14px;
+    margin: 0;
+    border-radius: 999px;
+    background: var(--cc-border);
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .cc-seek::-webkit-slider-runnable-track {
+    height: 14px;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      var(--cc-primary) 0%,
+      var(--cc-primary) calc(var(--cc-seek-fill, 0%)),
+      var(--cc-border) calc(var(--cc-seek-fill, 0%)),
+      var(--cc-border) 100%
+    );
+  }
+
+  .cc-seek::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    margin-top: -7px;
+    border-radius: 50%;
+    background: var(--cc-primary);
+    border: 3px solid var(--cc-surface);
+    box-shadow: var(--cc-shadow);
+    cursor: pointer;
+  }
+
+  .cc-seek::-moz-range-track {
+    height: 14px;
+    border-radius: 999px;
+    background: var(--cc-border);
+  }
+
+  .cc-seek::-moz-range-progress {
+    height: 14px;
+    border-radius: 999px;
+    background: var(--cc-primary);
+  }
+
+  .cc-seek::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--cc-primary);
+    border: 3px solid var(--cc-surface);
+    box-shadow: var(--cc-shadow);
+    cursor: pointer;
+  }
+}
+
+/* A tricky word: soft-yellow highlight, never red - see plan's kid-copy rules. */
+.ra-word {
+  background: var(--ra-sun);
+  color: var(--ra-sun-ink);
+  border-radius: 0.4rem;
+  padding: 0.05rem 0.3rem;
+}
+
+.ra-word-tricky {
+  font-weight: 800;
+}
+
+/* A quick "oops, try again" wiggle - used on wrong taps/picks across the
+   Blind Box and the PIN pad. */
+@keyframes cc-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-8px);
+  }
+  40% {
+    transform: translateX(8px);
+  }
+  60% {
+    transform: translateX(-6px);
+  }
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+/* Marks a low-confidence scanned sticker that needs a tap to fix - used on
+   CameraScan's preview grid. */
+@keyframes cc-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.cc-pulse {
+  animation: cc-pulse 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
